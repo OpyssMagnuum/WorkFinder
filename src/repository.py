@@ -1,8 +1,8 @@
-from typing import Annotated
+from typing import TypeVar
 
+from fastapi import HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select, update
-from sqlalchemy.orm import selectinload
-
 from src.database import new_a_session
 from src.models.seeking import SeekerModel, ResumeModel, HRModel, JudgeModel
 from src.schemas.seeking_sch import SeekerSchema, ResumeSchema, SeekerSchemaWid, ResumeSchemaWid, HRSchema, HRSchemaWid, \
@@ -12,94 +12,124 @@ from src.schemas.seeking_sch import SeekerSchema, ResumeSchema, SeekerSchemaWid,
 async def validate_query(session, query, schema):
     result = await session.execute(query)
     object_models = result.scalars().all()
-    object_schemas = [schema.model_validate(object) for object in object_models]
+    object_schemas = [schema.model_validate(obj) for obj in object_models]
     return object_schemas
 
 
-async def add_to_db(session, data, Model):
+def db_transaction(func):
+    async def wrapper(*args, **kwargs):
+        async with new_a_session() as session:
+            try:
+                result = await func(session=session, *args, **kwargs)
+                await session.commit()
+                return result
+            except Exception as e:
+                await session.rollback()
+                raise HTTPException(500, f'Database error: {str(e)}')
+    return wrapper
+
+
+@db_transaction
+async def add_to_db(session, data, model) -> int:
     dictionary = data.model_dump()
 
-    res = Model(**dictionary)
+    res = model(**dictionary)
     session.add(res)
     await session.flush()
+    return res.id
 
-    res_id = res.id
+T = TypeVar('T', bound=BaseModel)
+M = TypeVar('M')
 
-    return res_id
 
+class BaseRepository:
+    model: type[M]
+    schema: type[T]
 
-class SeekerRepository:
     @classmethod
-    async def add_seeker(cls, data: SeekerSchema) -> int:
+    async def get_all(cls) -> list[T]:
         async with new_a_session() as session:
-            res = await add_to_db(session, data, SeekerModel)
-            await session.commit()
-            return res
+            query = select(cls.model)
+            result = await session.execute(query)
+            return [cls.schema.model_validate(obj) for obj in result.scalars().all()]
+
+
+class SeekerRepository(BaseRepository):
+    model = SeekerModel
+    schema = SeekerSchemaWid
 
     @classmethod
-    async def find_seekers(
+    async def add_seeker(
             cls,
-    ) -> list[SeekerSchemaWid]:
-        async with new_a_session() as session:
-            query = select(SeekerModel)
-            return await validate_query(session, query, SeekerSchemaWid)
+            data: SeekerSchema
+    ) -> int:
+        return await add_to_db(data=data, model=cls.model)
+
+    # @classmethod
+    # async def find_seekers(
+    #         cls,
+    # ) -> list[SeekerSchemaWid]:
+    #     return await cls.get_all()
 
 
-class ResumeRepository:
+class ResumeRepository(BaseRepository):
+    model = ResumeModel
+    schema = ResumeSchemaWid
+
     @classmethod
-    async def add_resume(cls, data: ResumeSchema) -> int:
-        async with new_a_session() as session:
-            res = await add_to_db(session, data, ResumeModel)
-            await session.commit()
-            return res
-
-    @classmethod
-    async def find_resumes(
+    async def add_resume(
             cls,
-    ) -> list[ResumeSchemaWid]:
-        async with new_a_session() as session:
-            query = select(ResumeModel)
-            return await validate_query(session, query, ResumeSchemaWid)
+            data: ResumeSchema
+    ) -> int:
+        return await add_to_db(data=data, model=cls.model)
+
+    # @classmethod
+    # async def find_resumes(
+    #         cls,
+    # ) -> list[ResumeSchemaWid]:
+    #     return await cls.get_all()
 
     @classmethod
     async def find_resumes_for_seeker(cls, seeker_id) -> list[ResumeSchemaWid]:
         async with new_a_session() as session:
-            query = select(ResumeModel).filter(ResumeModel.seeker_id == seeker_id)
-            return await validate_query(session, query, ResumeSchemaWid)
+            query = select(cls.model).filter(cls.model.seeker_id == seeker_id)
+            return await validate_query(session, query, cls.schema)
 
 
-class HRRepository:
-    @classmethod
-    async def add_hr(cls, data: HRSchema) -> int:
-        async with new_a_session() as session:
-            res = await add_to_db(session, data, HRModel)
-            await session.commit()
-            return res
+class HRRepository(BaseRepository):
+    model = HRModel
+    schema = HRSchemaWid
 
     @classmethod
-    async def find_hrs(
+    async def add_hr(
             cls,
-    ) -> list[HRSchemaWid]:
-        async with new_a_session() as session:
-            query = select(HRModel)
-            return await validate_query(session, query, HRSchemaWid)
+            data: HRSchema,
+    ) -> int:
+        return await add_to_db(data=data, model=cls.model)
+
+    # @classmethod
+    # async def find_hrs(
+    #         cls,
+    # ) -> list[HRSchemaWid]:
+    #     return await cls.get_all()
 
 
-class JudgeRepository:
+class JudgeRepository(BaseRepository):
+    model = JudgeModel
+    schema = JudgeSchemaWid
+
     @classmethod
-    async def add_judge(cls, data: JudgeSchema) -> int:
-        async with new_a_session() as session:
-            res = await add_to_db(session, data, JudgeModel)
-            await session.commit()
-            return res
-
-    @classmethod
-    async def find_judges(
+    async def add_judge(
             cls,
-    ) -> list[JudgeSchemaWid]:
-        async with new_a_session() as session:
-            query = select(JudgeModel)
-            return await validate_query(session, query, JudgeSchemaWid)
+            data: JudgeSchema
+    ) -> int:
+        return await add_to_db(data=data, model=cls.model)
+
+    # @classmethod
+    # async def find_judges(
+    #         cls,
+    # ) -> list[JudgeSchemaWid]:
+    #     return await cls.get_all()
 
     @classmethod
     async def change_judge_status(

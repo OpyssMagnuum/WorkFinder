@@ -1,15 +1,18 @@
 from typing import Annotated
 from fastapi import APIRouter
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.api.dependencies import a_session_dep
 from src.repository import SeekerRepository, ResumeRepository, HRRepository, JudgeRepository
 from src.schemas.seeking_sch import SeekerSchema, ResumeSchema, ResumeSchemaWid, HRSchemaWid, HRSchema, JudgeSchemaWid, \
-    JudgeSchema, JudgeSchemaOnlyVerdict, JudgeSchemaOnlyVerdictWid
+    JudgeSchema, JudgeSchemaOnlyVerdict, JudgeSchemaOnlyVerdictWid, SeekerSchemaWid
 
 router = APIRouter()
 
 
 @router.get('/seekers', tags=['Искатель работы 🔍'], summary='Вывести всех искателей 🧑🏻‍👩🏻‍👦🏻')
-async def get_seekers() -> list[SeekerSchema]:
-    seekers = await SeekerRepository.find_seekers()
+async def get_seekers() -> list[SeekerSchemaWid]:
+    seekers = await SeekerRepository.get_all()
     return seekers
 
 
@@ -28,7 +31,7 @@ async def add_resume(resume: ResumeSchema) -> dict:
 
 @router.get('/resumes', tags=['Резюме 🧐'], summary='Посмотреть все резюме 📖')
 async def get_resumes() -> list[ResumeSchemaWid]:
-    resumes = await ResumeRepository.find_resumes()
+    resumes = await ResumeRepository.get_all()
     return resumes
 
 
@@ -41,7 +44,7 @@ async def get_resumes(seeker_id: int) -> list[ResumeSchemaWid]:
 # HR
 @router.get('/hrs', tags=['HR 💼'], summary='Посмотреть на всех HR 📧')
 async def get_hrs() -> list[HRSchemaWid]:
-    hrs = await HRRepository.find_hrs()
+    hrs = await HRRepository.get_all()
     return hrs
 
 
@@ -54,7 +57,7 @@ async def add_hr(hr: HRSchema) -> dict:
 # JUDGEMENT
 @router.get('/judges', tags=['Рассмотр 🔨'], summary='Посмотреть на все рассмотры 🤔')
 async def get_judges() -> list[JudgeSchemaWid]:
-    judges = await JudgeRepository.find_judges()
+    judges = await JudgeRepository.get_all()
     return judges
 
 
@@ -64,7 +67,7 @@ async def add_judge(judge: JudgeSchema) -> dict:
     return {"ok": True, "judge_id": judge_id}
 
 
-@router.patch('/judges/{id}', tags=['Рассмотр 🔨'], summary='Изменить статус рассмотрения  🔍️')
+@router.patch('/judges', tags=['Рассмотр 🔨'], summary='Изменить статус рассмотрения  🔍️')
 async def change_judge(data: JudgeSchemaOnlyVerdictWid) -> dict:
     changed = await JudgeRepository.change_judge_status(data)
     return {"ok": True, "changed_id": changed.get("id"), "changed_verdict": changed.get("verdict")}
